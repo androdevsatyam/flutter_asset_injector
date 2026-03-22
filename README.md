@@ -103,10 +103,23 @@ cd flutter_asset_injector/example
 dart run flutter_asset_injector:generate
 ```
 
-## Contributing
-
-Contributions are welcome. Please open an issue or submit a pull request on [GitHub](https://github.com/androdevsatyam/flutter_asset_injector).
+---
 
 ## License
 
 MIT
+
+
+
+## Contributing
+
+Contributions are welcome. Please open an issue or submit a pull request on [GitHub](https://github.com/androdevsatyam/flutter_asset_injector).
+
+
+## 🤝 Contributors
+
+Thanks to these amazing people who helped improve this project ❤️
+
+[![Contributors](https://contrib.rocks/image?repo=androdevsatyam/flutter_asset_injector)](https://github.com/androdevsatyam/flutter_asset_injector/graphs/contributors)
+
+---
