@@ -1,198 +1,162 @@
-/// Automatically scan asset directories and inject them into `pubspec.yaml`.
+/// A library to automatically scan and inject asset directories into `pubspec.yaml`.
 ///
-/// Use [generateAssets] as the main entry point.
-/// Catches errors with [AssetInjectorException].
+/// This library provides the core logic to recursively scan an assets folder
+/// and safely add the discovered directories into the flutter assets section
+/// of the `pubspec.yaml` file.
 library;
 
+// ignore_for_file: avoid_print
+
 import 'dart:io';
-import 'package:collection/collection.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml_edit/yaml_edit.dart';
+import 'package:collection/collection.dart';
 
-/// Thrown when asset injection fails.
+/// The main entry point to generate assets.
 ///
-/// Contains a human-readable [message] describing the error.
-class AssetInjectorException implements Exception {
-  /// A human-readable description of the error.
-  final String message;
-
-  /// Creates an [AssetInjectorException] with the given [message].
-  AssetInjectorException(this.message);
-
-  @override
-  String toString() => message;
-}
-
-/// Scans [folderName] (defaults to `assets`) for directories containing
-/// visible files and injects them into the `pubspec.yaml` of the current
-/// working directory.
-///
-/// Returns the number of asset paths injected.
-///
-/// Throws [AssetInjectorException] if:
-/// - the asset folder does not exist
-/// - no visible files are found
-/// - `pubspec.yaml` is missing or not writable
-int generateAssets(List<String> args) {
-  final folderName = args.isNotEmpty ? args.first : 'assets';
-  final rootPath = Directory.current.path;
-
-  final scannedPaths = _scanAssetPaths(rootPath, folderName);
-  final pubspecFile = _requirePubspecFile(rootPath);
-  final pubspecContent = pubspecFile.readAsStringSync();
-
-  final assets = _mergeAssets(pubspecContent, scannedPaths, folderName);
-  final yaml = _buildYaml(pubspecContent, assets);
-
-  _writeFile(pubspecFile, yaml);
-
-  return scannedPaths.length;
-}
-
-Set<String> _scanAssetPaths(String rootPath, String folderName) {
-  final directory = Directory(p.join(rootPath, folderName));
-
-  if (!directory.existsSync()) {
-    throw AssetInjectorException(
-      '"$folderName" folder not found in the current directory: $rootPath',
-    );
+/// Scans the given folder (defaulting to `assets` if no [args] are provided),
+/// discovers all files efficiently, and updates the existing `pubspec.yaml`
+/// while maintaining original formatting.
+void generateAssets(List<String> args) {
+  String folderName = 'assets';
+  if (args.isNotEmpty) {
+    folderName = args.first;
   }
 
-  final Set<String> paths = {};
-  _collectDirectories(directory, rootPath, paths);
+  final currentPath = Directory.current.path;
+  final buildDirectory = Directory(p.join(currentPath, folderName));
 
-  if (paths.isEmpty) {
-    throw AssetInjectorException(
-      'No valid files found in "$folderName" folder.',
+  if (!buildDirectory.existsSync()) {
+    print(
+      'Error: "$folderName" folder not found in the current directory: $currentPath',
     );
-  }
-
-  return paths;
-}
-
-void _collectDirectories(Directory dir, String rootPath, Set<String> results) {
-  final List<FileSystemEntity> entries;
-  try {
-    entries = dir.listSync(followLinks: false);
-  } on FileSystemException {
     return;
   }
 
-  bool hasVisibleFiles = false;
+  // Find all folders inside the specified folder (including the folder itself) that contain at least one file
+  final Set<String> assetPaths = {};
 
-  for (final entity in entries) {
-    if (p.basename(entity.path).startsWith('.')) continue;
+  void scanDirectory(Directory dir) {
+    bool hasFiles = false;
+    for (final entity in dir.listSync()) {
+      if (entity is File) {
+        final basename = p.basename(entity.path);
+        // Ignore hidden files
+        if (!basename.startsWith('.')) {
+          hasFiles = true;
+        }
+      } else if (entity is Directory) {
+        scanDirectory(entity);
+      }
+    }
 
-    if (entity is File) {
-      hasVisibleFiles = true;
-    } else if (entity is Directory) {
-      _collectDirectories(entity, rootPath, results);
+    if (hasFiles) {
+      // Normalize path to use forward slashes for pubspec.yaml
+      String relativePath = p.relative(dir.path, from: currentPath);
+      // Ensure forward slashes
+      relativePath = relativePath.replaceAll('\\', '/');
+      if (!relativePath.endsWith('/')) {
+        relativePath += '/';
+      }
+      assetPaths.add(relativePath);
     }
   }
 
-  if (hasVisibleFiles) {
-    var rel = p.relative(dir.path, from: rootPath).replaceAll('\\', '/');
-    if (!rel.endsWith('/')) rel += '/';
-    results.add(rel);
-  }
-}
+  scanDirectory(buildDirectory);
 
-File _requirePubspecFile(String rootPath) {
-  final file = File(p.join(rootPath, 'pubspec.yaml'));
-  if (!file.existsSync()) {
-    throw AssetInjectorException('pubspec.yaml not found at $rootPath');
+  if (assetPaths.isEmpty) {
+    print('No valid files found in "$folderName" folder.');
+    return;
   }
-  return file;
-}
 
-void _writeFile(File file, String content) {
+  final pubspecFile = File(p.join(currentPath, 'pubspec.yaml'));
+  if (!pubspecFile.existsSync()) {
+    print('Error: pubspec.yaml not found at $currentPath');
+    return;
+  }
+
+  final pubspecContent = pubspecFile.readAsStringSync();
+  final yamlEditor = YamlEditor(pubspecContent);
+
+  List<String> finalAssets = [];
+  bool hasFlutterSection = false;
+
+  bool flutterIsNull = false;
+
   try {
-    file.writeAsStringSync(content);
-  } on FileSystemException catch (e) {
-    throw AssetInjectorException(
-      'Failed to write pubspec.yaml: ${e.osError?.message ?? e.message}',
-    );
-  }
-}
+    final flutterNode = yamlEditor.parseAt(['flutter']);
+    hasFlutterSection = true;
+    if (flutterNode.value == null) {
+      flutterIsNull = true;
+    }
 
-List<String> _mergeAssets(
-  String pubspecContent,
-  Set<String> scannedPaths,
-  String folderName,
-) {
-  final existing = _parseExistingAssets(pubspecContent);
+    if (!flutterIsNull) {
+      try {
+        final assetsNode = yamlEditor.parseAt(['flutter', 'assets']);
+        if (assetsNode.value is Iterable) {
+          for (var asset in assetsNode.value as Iterable) {
+            finalAssets.add(asset.toString());
+          }
+        }
+      } catch (e) {
+        // The 'assets' node doesn't exist, which is fine.
+      }
+    }
+  } catch (e) {
+    // The 'flutter' node doesn't exist
+    hasFlutterSection = false;
+  }
+
   final prefix = folderName.endsWith('/') ? folderName : '$folderName/';
+  finalAssets.removeWhere((element) => element.startsWith(prefix));
 
-  existing.removeWhere((e) => e.startsWith(prefix));
-  existing.addAll(scannedPaths);
+  finalAssets.addAll(assetPaths);
+  finalAssets =
+      finalAssets.toSet().toList()
+        ..sort((a, b) => compareNatural(a.toLowerCase(), b.toLowerCase()));
 
-  return existing.toSet().toList()
-    ..sort((a, b) => compareNatural(a.toLowerCase(), b.toLowerCase()));
-}
-
-List<String> _parseExistingAssets(String pubspecContent) {
-  final editor = YamlEditor(pubspecContent);
-
-  try {
-    final flutter = editor.parseAt(['flutter']);
-    if (flutter.value == null) return [];
-
-    final assets = editor.parseAt(['flutter', 'assets']);
-    if (assets.value is Iterable) {
-      return [for (final v in assets.value as Iterable) v.toString()];
-    }
-  } catch (_) {}
-
-  return [];
-}
-
-String _buildYaml(String pubspecContent, List<String> assets) {
-  final editor = YamlEditor(pubspecContent);
-  final state = _flutterState(editor);
-
-  if (state == _Flutter.present) {
-    editor.update(['flutter', 'assets'], assets);
+  // Fallback YamlEditor if the visual placeholder doesn't exist
+  if (hasFlutterSection && !flutterIsNull) {
+    yamlEditor.update(['flutter', 'assets'], finalAssets);
   } else {
-    editor.update(['flutter'], {'assets': assets});
+    yamlEditor.update(['flutter'], {'assets': finalAssets});
   }
 
-  var result = editor.toString();
-  return _handlePlaceholder(pubspecContent, result, assets);
-}
+  String finalYamlString = yamlEditor.toString();
 
-enum _Flutter { present, isNull, missing }
+  // The user specifically wants the assets block to visually replace the flutter placeholder.
+  // YamlEditor often alphabetizes new keys which places 'assets' strangely above 'uses-material-design'
+  // and separates it from its comments. So we explicitly do a string substitution when possible.
+  final placeholderRegex = RegExp(
+    r'(^[ \t]*)#[ \t]*To add assets to your (?:application|package)[^\n]*\n[ \t]*#[ \t]*assets:[^\n]*\n[ \t]*#[^\n]*a_dot_burr\.jpeg[^\n]*\n[ \t]*#[^\n]*a_dot_ham\.jpeg[^\n]*\n?',
+    multiLine: true,
+  );
 
-_Flutter _flutterState(YamlEditor editor) {
-  try {
-    final node = editor.parseAt(['flutter']);
-    return node.value == null ? _Flutter.isNull : _Flutter.present;
-  } catch (_) {
-    return _Flutter.missing;
-  }
-}
+  var originalPubspecContent = pubspecFile.readAsStringSync();
+  if (placeholderRegex.hasMatch(originalPubspecContent)) {
+    // Generate a perfectly formatted YAML block using a dummy editor
+    final dummyEditor = YamlEditor('assets:\n');
+    dummyEditor.update(['assets'], finalAssets);
+    final formattedAssets = dummyEditor.toString().trim();
+    // Indent it correctly for inside 'flutter:'
+    final indentedAssets =
+        formattedAssets.split('\n').map((line) => '  $line').join('\n');
 
-final _placeholderRegex = RegExp(
-  r'^[ \t]*#[ \t]*To add assets to your (?:application|package)[^\n]*\n'
-  r'[ \t]*#[ \t]*assets:[^\n]*\n'
-  r'[ \t]*#[^\n]*a_dot_burr\.jpeg[^\n]*\n'
-  r'[ \t]*#[^\n]*a_dot_ham\.jpeg[^\n]*\n?',
-  multiLine: true,
-);
-
-String _handlePlaceholder(String original, String edited, List<String> assets) {
-  if (!_placeholderRegex.hasMatch(original)) return edited;
-
-  if (!RegExp(r'^[ \t]*assets:', multiLine: true).hasMatch(original)) {
-    final dummy = YamlEditor('assets:\n');
-    dummy.update(['assets'], assets);
-    final indented = dummy
-        .toString()
-        .trim()
-        .split('\n')
-        .map((l) => '  $l')
-        .join('\n');
-    return original.replaceFirst(_placeholderRegex, '$indented\n');
+    // Make sure we didn't already have a valid assets block somewhere
+    // otherwise we might duplicate it.
+    if (!RegExp(r'^[ \t]*assets:', multiLine: true).hasMatch(originalPubspecContent)) {
+      finalYamlString = originalPubspecContent.replaceFirst(
+        placeholderRegex,
+        '$indentedAssets\n',
+      );
+    } else {
+      // Just strip the comment if yamlEditor already did its job in the AST
+      finalYamlString = finalYamlString.replaceFirst(placeholderRegex, '');
+    }
   }
 
-  return edited.replaceFirst(_placeholderRegex, '');
+  pubspecFile.writeAsStringSync(finalYamlString);
+  print(
+    'Successfully updated pubspec.yaml with ${assetPaths.length} paths from "$folderName".',
+  );
 }
