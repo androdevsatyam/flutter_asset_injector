@@ -1,59 +1,101 @@
-# 📁 flutter_asset_injector
+# flutter_asset_injector
 
 [![Pub Version](https://img.shields.io/pub/v/flutter_asset_injector?color=blue&logo=dart)](https://pub.dev/packages/flutter_asset_injector)
-![Popularity](https://img.shields.io/pub/popularity/flutter_asset_injector)
+[![CI](https://img.shields.io/github/actions/workflow/status/androdevsatyam/flutter_asset_injector/flutter_asset_injector.yml?branch=main&label=CI)](https://github.com/androdevsatyam/flutter_asset_injector/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 
-> Say goodbye to manually typing `- assets/images/...` in your `pubspec.yaml`. Let a single command do it for you while keeping your file formatting intact!
+A Dart CLI that recursively scans your asset directories and injects them into `pubspec.yaml`.
+
+No more manually typing `- assets/images/...` every time you add a folder.
+
+![banner](https://raw.githubusercontent.com/androdevsatyam/flutter_asset_injector/main/assets/banner.png)
 
 ---
 
-![Banner Placeholder](https://raw.githubusercontent.com/androdevsatyam/flutter_asset_injector/main/assets/banner.png)
-
-----
-## 💡 The Motive
-In Flutter, defining assets in `pubspec.yaml` can get incredibly tedious when your project scales. Creating a new module feature often means making new asset directories like `assets/icons/home_feature/`, and forgetting to declare them in `pubspec.yaml` leads to frustrating "Asset not found" crashes during runtime. 
-
-Just like how `flutter_native_splash` handles your splash screens, **`flutter_asset_injector`** provides a simple CLI tool that recursively scans your assets folder and accurately injects every necessary directory path right into your `pubspec.yaml`.
-
-## 🎨 Demonstration
-
-![Demonstration GIF Placeholder](https://raw.githubusercontent.com/androdevsatyam/flutter_asset_injector/main/assets/example.gif)
-
----
-
-## ✨ Features
-* **Zero Config Required:** Plug and play. No bloated configuration models required.
-* **Recursive Auto-Discovery:** Scans through all nested directories and safely includes only folders that actually contain files.
-* **Natural Sorting:** Lists your paths in the exact same Natural Order that your IDE (VS Code / Android Studio) sorts your folder tree.
-* **Respects Your Styling:** Uses intelligent AST Yaml injection under the hood to ensure all your original `pubspec.yaml` **formatting, spacing, and comments remain untouched**.
-
-## 🚀 Quick Start
-
-### 1. Add Dependency
-Add this to your package's `pubspec.yaml` (under `dev_dependencies`):
+## Install
 
 ```yaml
 dev_dependencies:
   flutter_asset_injector: ^1.0.0
 ```
 
-### 2. Run the Command
-Execute the following from your terminal:
+## Usage
+
 ```bash
 dart run flutter_asset_injector:generate
 ```
 
-*By default, the script looks for a root folder named `assets`. If you use different naming, just pass it as an argument:*
+Custom folder:
+
 ```bash
 dart run flutter_asset_injector:generate my_custom_folder
 ```
 
----
+## Demo
 
-## 🛠 Test It Yourself!
+![demo](https://raw.githubusercontent.com/androdevsatyam/flutter_asset_injector/main/assets/example.gif)
 
-Want to see it in action before adding it to your own project? We have a fully configured example project ready for you to playfully test on!
+## What it does
+
+Given:
+
+```
+assets/
+  icons/
+    home.svg
+  images/
+    logo.png
+    2.0x/
+      logo.png
+    3.0x/
+      logo.png
+  translations/
+    en.json
+```
+
+Running the command updates your `pubspec.yaml`:
+
+```yaml
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/images/2.0x/
+    - assets/images/3.0x/
+    - assets/translations/
+```
+
+Your existing formatting, comments, fonts, and other Flutter config are preserved.
+
+## Behavior
+
+| Scenario | Result |
+|----------|--------|
+| Hidden files (`.DS_Store`, `.gitkeep`) | Ignored |
+| Hidden directories (`.git/`, `.idea/`) | Skipped |
+| Empty directories | Excluded |
+| Existing assets from other folders | Preserved |
+| Running multiple times | Idempotent |
+| Symlinks | Not followed |
+| Unreadable directories | Skipped |
+| Default placeholder comments (`a_dot_burr`) | Replaced |
+| Read-only `pubspec.yaml` | Error with clear message |
+
+## Programmatic usage
+
+```dart
+import 'package:flutter_asset_injector/flutter_asset_injector.dart';
+
+try {
+  final count = generateAssets(['assets']);
+  // count = number of paths injected
+} on AssetInjectorException catch (e) {
+  // handle error
+}
+```
+
+## Try it
 
 ```bash
 git clone https://github.com/androdevsatyam/flutter_asset_injector.git
@@ -61,19 +103,10 @@ cd flutter_asset_injector/example
 dart run flutter_asset_injector:generate
 ```
 
-**Boom. Assets Loaded.** Open the `example/pubspec.yaml` and watch how flawlessly the assets were injected.
+## Contributing
 
----
+Contributions are welcome. Please open an issue or submit a pull request on [GitHub](https://github.com/androdevsatyam/flutter_asset_injector).
 
-## 🤝 Contributing
-Contributions are absolutely welcome! Feel free to open an issue or submit a PR on GitHub.
+## License
 
----
-
-
-## 👨‍💻 Author
-
-Built with ❤️ by [**@androdevsatyam**](https://github.com/androdevsatyam)
-
-If this tool saved you time, consider ⭐ starring the repo.
-___
+MIT
