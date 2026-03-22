@@ -1,6 +1,6 @@
 name: flutter_asset_injector
 description: "A Dart CLI tool to automatically read your assets folder and add all directories to pubspec.yaml."
-version: 1.0.4
+version: 1.1.0
 homepage: https://github.com/androdevsatyam/flutter_asset_injector
 repository: https://github.com/androdevsatyam/flutter_asset_injector
 issue_tracker: https://github.com/androdevsatyam/flutter_asset_injector/issues
